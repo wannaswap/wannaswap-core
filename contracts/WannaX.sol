@@ -1,62 +1,58 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.6.12;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "./WannaSwapMintable.sol";
 
-contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
-    uint private _maxSupply = 100000000e18;
-    uint private _initialSupply = 42500000e18;
+contract WannaX is ERC20("WannaX", "WANNAx"){
+    using SafeMath for uint256;
+    IERC20 public wanna;
 
-    /**
-     * @dev Returns the max supply
-     */
-    function maxSupply() public view returns (uint) {
-        return _maxSupply;
+    constructor(IERC20 _wanna) public {
+        wanna = _wanna;
     }
 
-    /**
-     * @dev See {ERC20-_beforeTokenTransfer}.
-     *
-     * Requirements:
-     *
-     * - minted tokens must not cause the total supply to go over the max supply.
-     */
-    function _beforeTokenTransfer(address from, address to, uint amount) internal virtual override {
-        super._beforeTokenTransfer(from, to, amount);
-
-        if (from == address(0)) { // When minting tokens
-            require(totalSupply().add(amount) <= _maxSupply, "ERC20Capped: Max supply exceeded");
+    function enter(uint256 _amount) public {
+        uint256 totalWanna = wanna.balanceOf(address(this));
+        uint256 totalShares = totalSupply();
+        if (totalShares == 0 || totalWanna == 0) {
+            _mint(msg.sender, _amount);
+        } 
+        else {
+            uint256 what = _amount.mul(totalShares).div(totalWanna);
+            _mint(msg.sender, what);
         }
+        wanna.transferFrom(msg.sender, address(this), _amount);
     }
 
-    /**
-     * @dev Moves tokens `amount` from `sender` to `recipient`.
-     *
-     * This is internal function is equivalent to {transfer}, and can be used to
-     * e.g. implement automatic token fees, slashing mechanisms, etc.
-     *
-     * Emits a {Transfer} event.
-     *
-     * Requirements:
-     *
-     * - `sender` cannot be the zero address.
-     * - `recipient` cannot be the zero address.
-     * - `sender` must have a balance of at least `amount`.
-     */
-    function _transfer(address sender, address recipient, uint amount) internal virtual override {
-        super._transfer(sender, recipient, amount);
-        _moveDelegates(_delegates[sender], _delegates[recipient], amount);
+    function leave(uint256 _share) public {
+        uint256 totalShares = totalSupply();
+        uint256 what = _share.mul(wanna.balanceOf(address(this))).div(totalShares);
+        _burn(msg.sender, _share);
+        wanna.transfer(msg.sender, what);
     }
 
-    /// @notice Creates `_amount` token to `_to`. Must only be called by the minters.
-    function mint(address _to, uint _amount) public onlyMinter {
-        _mint(_to, _amount);
-        _moveDelegates(address(0), _delegates[_to], _amount);
+    function wannaBalance(address _account) external view returns (uint256 wannaAmount) {
+        uint256 wannaxAmount = balanceOf(_account);
+        uint256 totalWannax = totalSupply();
+        wannaAmount = wannaxAmount.mul(wanna.balanceOf(address(this))).div(totalWannax);
     }
 
-    function burn(uint _amount) public {
-        super._burn(msg.sender, _amount);
+    function wannaxForWanna(uint256 _wannaxAmount) external view returns (uint256 wannaAmount) {
+        uint256 totalWannax = totalSupply();
+        wannaAmount = _wannaxAmount.mul(wanna.balanceOf(address(this))).div(totalWannax);
+    }
+
+    function wannaForWannax(uint256 _wannaAmount) external view returns (uint256 wannaxAmount) {
+        uint256 totalWanna = wanna.balanceOf(address(this));
+        uint256 totalWannax = totalSupply();
+        if (totalWannax == 0 || totalWanna == 0) {
+            wannaxAmount = _wannaAmount;
+        }
+        else {
+            wannaxAmount = _wannaAmount.mul(totalWannax).div(totalWanna);
+        }
     }
 
     // Copied and modified from YAM code:
@@ -65,13 +61,13 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
     // Which is copied and modified from COMPOUND:
     // https://github.com/compound-finance/compound-protocol/blob/master/contracts/Governance/Comp.sol
 
-    /// @dev A record of each accounts delegate
+    // A record of each accounts delegate
     mapping (address => address) internal _delegates;
 
     /// @notice A checkpoint for marking number of votes from a given block
     struct Checkpoint {
         uint32 fromBlock;
-        uint votes;
+        uint256 votes;
     }
 
     /// @notice A record of votes checkpoints for each account, by index
@@ -81,12 +77,12 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
     mapping (address => uint32) public numCheckpoints;
 
     /// @notice The EIP-712 typehash for the contract's domain
-    bytes32 public constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,uint chainId,address verifyingContract)");
+    bytes32 public constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)");
 
     /// @notice The EIP-712 typehash for the delegation struct used by the contract
-    bytes32 public constant DELEGATION_TYPEHASH = keccak256("Delegation(address delegatee,uint nonce,uint expiry)");
+    bytes32 public constant DELEGATION_TYPEHASH = keccak256("Delegation(address delegatee,uint256 nonce,uint256 expiry)");
 
-    /// @notice A record of states for signing / validating signatures
+    // A record of states for signing / validating signatures
     mapping (address => uint) public nonces;
 
       /// @notice An event thats emitted when an account changes its delegate
@@ -94,10 +90,53 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
 
     /// @notice An event thats emitted when a delegate account's vote balance changes
     event DelegateVotesChanged(address indexed delegate, uint previousBalance, uint newBalance);
+    
+    function burn(address _from, uint256 _amount) private {
+        _burn(_from, _amount);
+        _moveDelegates(_delegates[_from], address(0), _amount);
+    }
+
+    function mint(address recipient, uint256 _amount) private {
+        _mint(recipient, _amount);
+
+        _initDelegates(recipient);
+
+        _moveDelegates(address(0), _delegates[recipient], _amount);
+    }
+
+    function transferFrom(address sender, address recipient, uint256 amount) 
+    public virtual override returns (bool)
+    {
+        bool result = super.transferFrom(sender, recipient, amount); // Call parent hook
+
+        _initDelegates(recipient);
+
+        _moveDelegates(_delegates[sender], _delegates[recipient], amount);
+
+        return result;
+    }
+
+    function transfer(address recipient, uint256 amount) 
+    public virtual override returns (bool)
+    {
+        bool result = super.transfer(recipient, amount); // Call parent hook
+
+        _initDelegates(recipient);
+
+        _moveDelegates(_delegates[_msgSender()], _delegates[recipient], amount);
+
+        return result;
+    }
+
+    // initialize delegates mapping of recipient if not already
+    function _initDelegates(address recipient) internal {
+        if(_delegates[recipient] == address(0)) {
+            _delegates[recipient] = recipient;
+        }
+    }
 
     /**
-     * @notice Delegate votes from `msg.sender` to `delegatee`
-     * @param delegator The address to get delegatee for
+     * @param delegator The address to get delegates for
      */
     function delegates(address delegator)
         external
@@ -124,16 +163,7 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
      * @param r Half of the ECDSA signature pair
      * @param s Half of the ECDSA signature pair
      */
-    function delegateBySig(
-        address delegatee,
-        uint nonce,
-        uint expiry,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    )
-        external
-    {
+    function delegateBySig(address delegatee, uint nonce, uint expiry, uint8 v, bytes32 r, bytes32 s ) external {
         bytes32 domainSeparator = keccak256(
             abi.encode(
                 DOMAIN_TYPEHASH,
@@ -161,9 +191,9 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
         );
 
         address signatory = ecrecover(digest, v, r, s);
-        require(signatory != address(0), "delegateBySig: invalid signature");
-        require(nonce == nonces[signatory]++, "delegateBySig: invalid nonce");
-        require(now <= expiry, "delegateBySig: signature expired");
+        require(signatory != address(0), "WANNAx::delegateBySig: invalid signature");
+        require(nonce == nonces[signatory]++, "WANNAx::delegateBySig: invalid nonce");
+        require(block.timestamp <= expiry, "WANNAx::delegateBySig: signature expired");
         return _delegate(signatory, delegatee);
     }
 
@@ -175,7 +205,7 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
     function getCurrentVotes(address account)
         external
         view
-        returns (uint)
+        returns (uint256)
     {
         uint32 nCheckpoints = numCheckpoints[account];
         return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : 0;
@@ -191,9 +221,9 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
     function getPriorVotes(address account, uint blockNumber)
         external
         view
-        returns (uint)
+        returns (uint256)
     {
-        require(blockNumber < block.number, "getPriorVotes: not yet determined");
+        require(blockNumber < block.number, "WANNAx::getPriorVotes: not yet determined");
 
         uint32 nCheckpoints = numCheckpoints[account];
         if (nCheckpoints == 0) {
@@ -230,7 +260,7 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
         internal
     {
         address currentDelegate = _delegates[delegator];
-        uint delegatorBalance = balanceOf(delegator);
+        uint256 delegatorBalance = balanceOf(delegator); // balance of underlying WANNAs (not scaled);
         _delegates[delegator] = delegatee;
 
         emit DelegateChanged(delegator, currentDelegate, delegatee);
@@ -238,21 +268,21 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
         _moveDelegates(currentDelegate, delegatee, delegatorBalance);
     }
 
-    function _moveDelegates(address srcRep, address dstRep, uint amount) internal {
+    function _moveDelegates(address srcRep, address dstRep, uint256 amount) internal {
         if (srcRep != dstRep && amount > 0) {
             if (srcRep != address(0)) {
                 // decrease old representative
                 uint32 srcRepNum = numCheckpoints[srcRep];
-                uint srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
-                uint srcRepNew = srcRepOld.sub(amount);
+                uint256 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
+                uint256 srcRepNew = srcRepOld - amount;
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
             }
 
             if (dstRep != address(0)) {
                 // increase new representative
                 uint32 dstRepNum = numCheckpoints[dstRep];
-                uint dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
-                uint dstRepNew = dstRepOld.add(amount);
+                uint256 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
+                uint256 dstRepNew = dstRepOld + amount;
                 _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
             }
         }
@@ -261,12 +291,12 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
     function _writeCheckpoint(
         address delegatee,
         uint32 nCheckpoints,
-        uint oldVotes,
-        uint newVotes
+        uint256 oldVotes,
+        uint256 newVotes
     )
         internal
     {
-        uint32 blockNumber = safe32(block.number, "_writeCheckpoint: block number exceeds 32 bits");
+        uint32 blockNumber = safe32(block.number, "WANNAx::_writeCheckpoint: block number exceeds 32 bits");
 
         if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
             checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
@@ -283,14 +313,9 @@ contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
         return uint32(n);
     }
 
-    function getChainId() internal pure returns (uint) {
-        uint chainId;
+    function getChainId() internal view returns (uint) {
+        uint256 chainId;
         assembly { chainId := chainid() }
         return chainId;
-    }
-
-    constructor() public {
-        _mint(msg.sender, _initialSupply);
-        _moveDelegates(address(0), msg.sender, _initialSupply);
     }
 }
