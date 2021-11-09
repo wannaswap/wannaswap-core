@@ -52,6 +52,10 @@ contract WannaConvertFee is BoringOwnable {
         weth = _weth;
     }
 
+    receive() external payable {
+        assert(msg.sender == weth); // only accept ETH via fallback from the WETH contract
+    }
+
     function bridgeFor(address token) public view returns (address bridge) {
         bridge = _bridges[token];
         if (bridge == address(0)) {
