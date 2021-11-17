@@ -54,8 +54,6 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
 
     constructor(
         WannaSwapToken _wanna,
-        address _profileAddress,
-        address _routerAddress,
         uint _maxReward,
         uint _rewardPerRound,
         uint _roundTime,
@@ -64,8 +62,6 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
         uint _top3TeamPercent
     ) public {
         wanna = _wanna;
-        profileAddress = _profileAddress;
-        routerAddress = _routerAddress;
         maxReward = _maxReward;
         rewardPerRound = _rewardPerRound;
         roundTime = _roundTime;

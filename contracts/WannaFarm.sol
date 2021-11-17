@@ -51,13 +51,11 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
     constructor(
         WannaSwapToken _wanna,
-        address _profile,
         uint _totalWanna,
         uint _wannaPerBlock,
         uint _refPercent
     ) public {
         wanna = _wanna;
-        profile = _profile;
         totalWanna = _totalWanna;
         mintedWanna = 0;
         wannaPerBlock = _wannaPerBlock;
