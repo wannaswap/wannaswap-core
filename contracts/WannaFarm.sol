@@ -6,10 +6,11 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IWannaSwapProfile.sol";
 import "./WannaSwapToken.sol";
 
-contract WannaFarm is Ownable {
+contract WannaFarm is Ownable, ReentrancyGuard {
     string public name = "WannaFarm";
     using SafeMath for uint;
     using SafeERC20 for IERC20;
@@ -64,11 +65,10 @@ contract WannaFarm is Ownable {
         startBlock = block.timestamp;
     }
 
-    // It's not a fool proof solution, but it prevents flash loans, so here it's ok to use tx.origin
-    modifier onlyEOA() {
-        // Try to make flash-loan exploit harder to do.
-        require(msg.sender == tx.origin, "MUST USE EOA");
-        _;
+    function setProfile(address _profile) public onlyOwner {
+        // able to change once to keep safety
+        require(profile == address(0), "PROFILE HAS BEEN CHANGED");
+        profile = _profile;
     }
 
     function setEmissionRate(uint _wannaPerBlock) public onlyOwner {
@@ -205,7 +205,7 @@ contract WannaFarm is Ownable {
                 wanna.transfer(_user, pending);
             }
 
-            if (isEnableRef) {
+            if (profile != address(0) && isEnableRef) {
                 uint refPending = pending.mul(refPercent).div(100e18); // referrer's reward = <refPercent> % referral's reward
                 if (mintedWanna.add(refPending) > totalWanna) {
                     refPending = totalWanna.sub(mintedWanna);
@@ -226,7 +226,7 @@ contract WannaFarm is Ownable {
         }
     }
 
-    function deposit(uint _pid, uint _amount) public onlyEOA {
+    function deposit(uint _pid, uint _amount) public nonReentrant {
         require(_pid < poolInfo.length, "deposit: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
@@ -243,7 +243,7 @@ contract WannaFarm is Ownable {
         emit Deposit(msg.sender, _pid, _amount);
     }
 
-    function withdraw(uint _pid, uint _amount) public onlyEOA {
+    function withdraw(uint _pid, uint _amount) public nonReentrant {
         require(_pid < poolInfo.length, "withdraw: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
