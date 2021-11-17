@@ -6,10 +6,10 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "../interfaces/IWannaSwapProfile.sol";
 import "./WannaSwapToken.sol";
 
-contract WannaFarm is Ownable, ReentrancyGuard {
+contract WannaFarm is Ownable {
     string public name = "WannaFarm";
     using SafeMath for uint;
     using SafeERC20 for IERC20;
@@ -23,21 +23,24 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     struct PoolInfo {
         IERC20 lpToken;
         uint allocPoint;
-        uint lastRewardBlock; // last timestamp
+        uint lastRewardBlock; // actually last timestamp to be more stable
         uint accWannaPerShare;
         uint totalLp;
     }
 
     WannaSwapToken public wanna;
-    uint public startBlock; // start timestamp
-    address public burnAddress = address(0x000000000000000000000000000000000000dEaD);
-    uint public burnPercent;
+    address public profile;
+    uint public immutable startBlock; // actually start timestamp to be more stable
+    address public immutable burnAddress = address(0x000000000000000000000000000000000000dEaD);
+    uint public refPercent;
+    bool public isEnableRef = false;
 
     uint public totalWanna;
     uint public mintedWanna;
-    uint public wannaPerBlock; // per second
+    uint public wannaPerBlock; // actually per second to be more stable
 
     PoolInfo[] public poolInfo;
+    mapping (address => uint) poolIndex;
     mapping (uint => mapping (address => UserInfo)) public userInfo;
     uint public totalAllocPoint = 0;
 
@@ -47,16 +50,25 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
     constructor(
         WannaSwapToken _wanna,
+        address _profile,
         uint _totalWanna,
         uint _wannaPerBlock,
-        uint _burnPercent
+        uint _refPercent
     ) public {
         wanna = _wanna;
+        profile = _profile;
         totalWanna = _totalWanna;
         mintedWanna = 0;
         wannaPerBlock = _wannaPerBlock;
-        burnPercent = _burnPercent;
+        refPercent = _refPercent;
         startBlock = block.timestamp;
+    }
+
+    // It's not a fool proof solution, but it prevents flash loans, so here it's ok to use tx.origin
+    modifier onlyEOA() {
+        // Try to make flash-loan exploit harder to do.
+        require(msg.sender == tx.origin, "MUST USE EOA");
+        _;
     }
 
     function setEmissionRate(uint _wannaPerBlock) public onlyOwner {
@@ -64,18 +76,23 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         wannaPerBlock = _wannaPerBlock;
     }
 
-    function setTotalWanna(
+    function settotalWanna(
         uint _totalWanna) public onlyOwner {
         updateAllPools();
-        require(_totalWanna >= mintedWanna, "setTotalWanna: BAD TOTALWANNA");
+        require(_totalWanna >= mintedWanna, "settotalWanna: BAD totalWanna");
         totalWanna = _totalWanna;
     }
 
     function setPercent(
-        uint _burnPercent) public onlyOwner {
-        require(_burnPercent < 100e18, "setPercent: BAD PERCENT");
+        uint _refPercent) public onlyOwner {
+        require(_refPercent < 100e18, "setPercent: BAD PERCENT");
         updateAllPools();
-        burnPercent = _burnPercent;
+        refPercent = _refPercent;
+    }
+
+    function setIsEnableRef(
+        bool _isEnableRef) public onlyOwner {
+        isEnableRef = _isEnableRef;
     }
 
     function poolLength() external view returns (uint) {
@@ -83,6 +100,8 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     }
 
     function addPool(uint _allocPoint, IERC20 _lpToken, bool _withUpdate) public onlyOwner {
+        // prevent from adding a pool twice
+        require(poolIndex[address(_lpToken)] == 0, "addPool: EXISTED POOL");
         if (_withUpdate) {
             updateAllPools();
         }
@@ -96,6 +115,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
             accWannaPerShare: 0,
             totalLp: 0
         }));
+        poolIndex[address(_lpToken)] = poolInfo.length;
     }
 
     function setPool(uint _pid, uint _allocPoint, bool _withUpdate) public onlyOwner {
@@ -121,7 +141,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
             uint blockCount = getBlockCount(pool.lastRewardBlock, block.timestamp);
             uint wannaReward = blockCount.mul(wannaPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
 
-            ( , uint farmWanna) = calculate(wannaReward);
+            uint farmWanna = calculate(wannaReward);
 
             accWannaPerShare = accWannaPerShare.add(farmWanna.mul(1e18).div(lpSupply));
         }
@@ -135,13 +155,12 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         }
     }
 
-    function calculate(uint _reward) public view returns (uint burnWanna, uint farmWanna) {
+    function calculate(uint _reward) public view returns (uint farmWanna) {
         if (totalWanna <= mintedWanna.add(_reward)) {
             _reward = totalWanna.sub(mintedWanna);
         }
         
-        burnWanna = _reward.mul(burnPercent).div(100e18);
-        farmWanna = _reward.sub(burnWanna);
+        farmWanna = _reward;
     }
 
     function updatePool(uint _pid) public {
@@ -159,13 +178,10 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         uint blockCount = getBlockCount(pool.lastRewardBlock, block.timestamp);
         uint wannaReward = blockCount.mul(wannaPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
 
-        (uint burnWanna, uint farmWanna) = calculate(wannaReward);
+        uint farmWanna = calculate(wannaReward);
 
-        wanna.mint(address(this), burnWanna.add(farmWanna));
-        mintedWanna = mintedWanna.add(burnWanna).add(farmWanna);
-        if (burnWanna > 0) {
-            wanna.transfer(burnAddress, burnWanna);
-        }
+        wanna.mint(address(this), farmWanna);
+        mintedWanna = mintedWanna.add(farmWanna);
 
         pool.accWannaPerShare = pool.accWannaPerShare.add(farmWanna.mul(1e18).div(lpSupply));
         pool.lastRewardBlock = block.timestamp;
@@ -185,15 +201,32 @@ contract WannaFarm is Ownable, ReentrancyGuard {
                 pending = balance;
             }
 
-            if(pending > 0) {
+            if (pending > 0) {
                 wanna.transfer(_user, pending);
+            }
+
+            if (isEnableRef) {
+                uint refPending = pending.mul(refPercent).div(100e18); // referrer's reward = <refPercent> % referral's reward
+                if (mintedWanna.add(refPending) > totalWanna) {
+                    refPending = totalWanna.sub(mintedWanna);
+                }
+                if (refPending > 0) {
+                    mintedWanna = mintedWanna.add(refPending);
+                    IWannaSwapProfile profileContract = IWannaSwapProfile(profile);
+                    address referrer = profileContract.referrer(_user);
+                    if (referrer == address(0)) {
+                        referrer = burnAddress; // if user does NOT have referrer => burn
+                    }
+                    profileContract.addEmission(_user, refPending);
+                    wanna.mint(referrer, refPending);
+                }
             }
 
             user.rewardDebt = user.amount.mul(pool.accWannaPerShare).div(1e18);
         }
     }
 
-    function deposit(uint _pid, uint _amount) public nonReentrant {
+    function deposit(uint _pid, uint _amount) public onlyEOA {
         require(_pid < poolInfo.length, "deposit: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
@@ -210,7 +243,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         emit Deposit(msg.sender, _pid, _amount);
     }
 
-    function withdraw(uint _pid, uint _amount) public nonReentrant {
+    function withdraw(uint _pid, uint _amount) public onlyEOA {
         require(_pid < poolInfo.length, "withdraw: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];

@@ -73,14 +73,7 @@ contract WannaConvertFee is BoringOwnable {
         emit LogBridgeSet(token, bridge);
     }
 
-    // It's not a fool proof solution, but it prevents flash loans, so here it's ok to use tx.origin
-    modifier onlyEOA() {
-        // Try to make flash-loan exploit harder to do by only allowing externally owned addresses.
-        require(msg.sender == tx.origin, "WannaConvertFee: must use EOA");
-        _;
-    }
-
-    function convertSingleToken(address token) external onlyEOA() {
+    function convertSingleToken(address token) external {
         uint256 amount = IERC20(token).balanceOf(address(this));
         emit LogConvertSingleToken(
             msg.sender,
@@ -92,7 +85,7 @@ contract WannaConvertFee is BoringOwnable {
 
     function convertMultipleSingleToken(
         address[] calldata token
-    ) external onlyEOA() {
+    ) external {
         uint256 len = token.length;
         for (uint256 i = 0; i < len; i++) {
             uint256 amount = IERC20(token[i]).balanceOf(address(this));
@@ -105,14 +98,14 @@ contract WannaConvertFee is BoringOwnable {
         }
     }
 
-    function convert(address token0, address token1) external onlyEOA() {
+    function convert(address token0, address token1) external {
         _convert(token0, token1);
     }
 
     function convertMultiple(
         address[] calldata token0,
         address[] calldata token1
-    ) external onlyEOA() {
+    ) external {
         uint256 len = token0.length;
         for (uint256 i = 0; i < len; i++) {
             _convert(token0[i], token1[i]);
