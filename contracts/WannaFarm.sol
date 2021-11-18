@@ -33,6 +33,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     address public profile;
     uint public immutable startBlock; // actually start timestamp to be more stable
     address public immutable burnAddress = address(0x000000000000000000000000000000000000dEaD);
+    uint public immutable claimableTime = 1638367200; // Wednesday, December 1, 2021 2:00:00 PM UTC
     uint public refPercent;
     bool public isEnableRef = false;
 
@@ -230,7 +231,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         updatePool(_pid);
-        harvest(_pid, msg.sender);
+        if (block.timestamp >= claimableTime) harvest(_pid, msg.sender);
 
         if(_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
@@ -248,7 +249,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         require(user.amount >= _amount, "withdraw: BAD AMOUNT");
 
         updatePool(_pid);
-        harvest(_pid, msg.sender);
+        if (block.timestamp >= claimableTime) harvest(_pid, msg.sender);
 
         if(_amount > 0) {
             user.amount = user.amount.sub(_amount);
