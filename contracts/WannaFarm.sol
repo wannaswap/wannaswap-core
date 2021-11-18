@@ -19,6 +19,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     struct UserInfo {
         uint amount;
         uint rewardDebt;
+        uint lockedReward; // can claim after <claimableTime>
     }
 
     struct PoolInfo {
@@ -75,10 +76,10 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         wannaPerBlock = _wannaPerBlock;
     }
 
-    function settotalWanna(
+    function setTotalWanna(
         uint _totalWanna) public onlyOwner {
         updateAllPools();
-        require(_totalWanna >= mintedWanna, "settotalWanna: BAD totalWanna");
+        require(_totalWanna >= mintedWanna, "setTotalWanna: BAD totalWanna");
         totalWanna = _totalWanna;
     }
 
@@ -144,7 +145,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
             accWannaPerShare = accWannaPerShare.add(farmWanna.mul(1e18).div(lpSupply));
         }
-        return user.amount.mul(accWannaPerShare).div(1e18).sub(user.rewardDebt);
+        return user.amount.mul(accWannaPerShare).div(1e18).sub(user.rewardDebt).add(user.lockedReward);
     }
 
     function updateAllPools() public {
@@ -223,6 +224,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
             user.rewardDebt = user.amount.mul(pool.accWannaPerShare).div(1e18);
         }
+        user.lockedReward = 0;
     }
 
     function deposit(uint _pid, uint _amount) public nonReentrant {
@@ -231,7 +233,12 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         updatePool(_pid);
-        if (block.timestamp >= claimableTime) harvest(_pid, msg.sender);
+        if (block.timestamp >= claimableTime) {
+            harvest(_pid, msg.sender);
+        }
+        else {
+            user.lockedReward = pendingWanna(_pid, msg.sender);
+        }
 
         if(_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
@@ -249,7 +256,12 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         require(user.amount >= _amount, "withdraw: BAD AMOUNT");
 
         updatePool(_pid);
-        if (block.timestamp >= claimableTime) harvest(_pid, msg.sender);
+        if (block.timestamp >= claimableTime) {
+            harvest(_pid, msg.sender);
+        }
+        else {
+            user.lockedReward = pendingWanna(_pid, msg.sender);
+        }
 
         if(_amount > 0) {
             user.amount = user.amount.sub(_amount);
