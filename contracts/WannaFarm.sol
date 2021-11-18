@@ -224,7 +224,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
             user.rewardDebt = user.amount.mul(pool.accWannaPerShare).div(1e18);
         }
-        user.lockedReward = 0;
+        user.lockedReward = 0; // after first harvest, lockred reward's always 0
     }
 
     function deposit(uint _pid, uint _amount) public nonReentrant {
