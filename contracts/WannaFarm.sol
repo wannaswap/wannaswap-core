@@ -294,7 +294,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         user.lockedReward = 0; // after first harvest, lockred reward's always 0
     }
 
-    function deposit(uint _pid, uint _amount) external nonReentrant {
+    function deposit(uint _pid, uint _amount, address _ref) external nonReentrant {
         require(_pid < poolInfo.length, "deposit: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
@@ -313,6 +313,11 @@ contract WannaFarm is Ownable, ReentrancyGuard {
             pool.totalLp = pool.totalLp.add(_amount);
         }
         user.rewardDebt = user.amount.mul(pool.accWannaPerShare).div(1e18);
+
+        address profileAddress = profile;
+        if (profileAddress != address(0) && _ref != address(0)) {
+            IWannaSwapProfile(profileAddress).setReferrer(_ref);
+        }
         emit Deposit(msg.sender, _pid, _amount);
     }
 
