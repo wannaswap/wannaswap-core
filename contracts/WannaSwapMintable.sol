@@ -7,13 +7,17 @@ import "@openzeppelin/contracts/GSN/Context.sol";
 
 contract WannaSwapMintable is Context, Ownable {
     mapping(address => bool) public _minters;
+    uint public minterLength;
 
-    event SetMinter(address indexed user, bool isMinter);
+    event AddMinter(address indexed user);
+    event RemoveMinter(address indexed user);
 
     constructor () internal {
         address msgSender = _msgSender();
         _minters[msgSender] = true;
-        emit SetMinter(msgSender, true);
+        minterLength = 1;
+
+        emit AddMinter(msgSender);
     }
 
     modifier onlyMinter() {
@@ -21,16 +25,19 @@ contract WannaSwapMintable is Context, Ownable {
         _;
     }
 
-    function setMinter(address _user, bool _isMinter) public virtual onlyOwner {
-        emit SetMinter(_user, _isMinter);
-        _minters[_user] = _isMinter;
+    function addMinter(address _user) external virtual onlyOwner {
+        require(!_minters[_user], "addMinter: MINTER HAS EXISTED");
+        _minters[_user] = true;
+        minterLength++;
+
+        emit AddMinter(_user);
     }
 
-    function addMinter(address _user) public virtual onlyOwner {
-        setMinter(_user, true);
-    }
+    function removeMinter(address _user) external virtual onlyOwner {
+        require(_minters[_user], "addMinter: MINTER HAS NOT EXISTED");
+        _minters[_user] = false;
+        minterLength--;
 
-    function removeMinter(address _user) public virtual onlyOwner {
-        setMinter(_user, false);
+        emit RemoveMinter(_user);
     }
 }

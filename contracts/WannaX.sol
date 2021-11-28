@@ -13,7 +13,7 @@ contract WannaX is ERC20("WannaX", "WANNAx"){
         wanna = _wanna;
     }
 
-    function enter(uint256 _amount) public {
+    function enter(uint256 _amount) external {
         uint256 totalWanna = wanna.balanceOf(address(this));
         uint256 totalShares = totalSupply();
         if (totalShares == 0 || totalWanna == 0) {
@@ -26,7 +26,7 @@ contract WannaX is ERC20("WannaX", "WANNAx"){
         wanna.transferFrom(msg.sender, address(this), _amount);
     }
 
-    function leave(uint256 _share) public {
+    function leave(uint256 _share) external {
         uint256 totalShares = totalSupply();
         uint256 what = _share.mul(wanna.balanceOf(address(this))).div(totalShares);
         _burn(msg.sender, _share);
