@@ -20,7 +20,6 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     struct UserInfo {
         uint amount;
         uint rewardDebt;
-        uint lockedReward; // can claim after <claimableTime>
     }
 
     struct PoolInfo {
@@ -35,7 +34,6 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     WannaSwapToken public immutable wanna;
     address public immutable profile;
     address public immutable burnAddress = address(0x000000000000000000000000000000000000dEaD);
-    uint public immutable claimableTime = 1639396800; // Monday, December 13, 2021 12:00:00 PM
     uint public refPercent;
     bool public isEnableRef;
 
@@ -178,7 +176,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
             accWannaPerShare = accWannaPerShare.add(farmWanna.mul(1e18).div(lpSupply));
         }
-        return user.amount.mul(accWannaPerShare).div(1e18).sub(user.rewardDebt).add(user.lockedReward);
+        return user.amount.mul(accWannaPerShare).div(1e18).sub(user.rewardDebt);
     }
 
     function pendingBonus(uint _pid, address _user) public view returns (uint) {
@@ -214,7 +212,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         if (curTotalWanna > wannaMaxSupply) {
             curTotalWanna = wannaMaxSupply;
         }
-        if (curTotalWanna <= curMintedWanna.add(_reward)) {
+        if (curTotalWanna < curMintedWanna.add(_reward)) {
             _reward = curTotalWanna.sub(curMintedWanna);
         }
         
@@ -291,7 +289,6 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
             user.rewardDebt = amount.mul(pool.accWannaPerShare).div(1e18);
         }
-        user.lockedReward = 0; // after first harvest, lockred reward's always 0
     }
 
     function deposit(uint _pid, uint _amount, address _ref) external nonReentrant {
@@ -300,12 +297,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         updatePool(_pid);
-        if (block.timestamp >= claimableTime) {
-            harvest(_pid, msg.sender);
-        }
-        else {
-            user.lockedReward = pendingWanna(_pid, msg.sender);
-        }
+        harvest(_pid, msg.sender);
 
         if(_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
@@ -316,7 +308,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
         address profileAddress = profile;
         if (profileAddress != address(0) && _ref != address(0)) {
-            IWannaSwapProfile(profileAddress).setReferrer(_ref);
+            IWannaSwapProfile(profileAddress).setReferrer(msg.sender, _ref);
         }
         emit Deposit(msg.sender, _pid, _amount);
     }
@@ -328,12 +320,8 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         require(user.amount >= _amount, "withdraw: BAD AMOUNT");
 
         updatePool(_pid);
-        if (block.timestamp >= claimableTime) {
-            harvest(_pid, msg.sender);
-        }
-        else {
-            user.lockedReward = pendingWanna(_pid, msg.sender);
-        }
+        harvest(_pid, msg.sender);
+
 
         if(_amount > 0) {
             user.amount = user.amount.sub(_amount);

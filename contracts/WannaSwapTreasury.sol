@@ -36,7 +36,7 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
         bool isClose;
     }
 
-    WannaSwapToken public wanna;
+    WannaSwapToken public immutable wanna;
     address public profileAddress;
     address public routerAddress;
     uint public maxReward;
@@ -84,16 +84,22 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
         // able to change once to keep safety
         require(profileAddress == address(0), "PROFILE HAS BEEN CHANGED");
         profileAddress = _profileAddress;
+
+        emit SetProfile(_profileAddress);
     }
 
     function setRouter(address _routerAddress) external override onlyOwner {
         // able to change once to keep safety
         require(routerAddress == address(0), "ROUTER HAS BEEN CHANGED");
         routerAddress = _routerAddress;
+
+        emit SetRouter(_routerAddress);
     }
 
     function setRewardPerRound(uint _rewardPerRound) external override onlyOwner {
         rewardPerRound = _rewardPerRound;
+
+        emit SetRewardPerRound(_rewardPerRound);
     }
 
     function setTopTeamPercents(uint _top1TeamPercent, uint _top2TeamPercent, uint _top3TeamPercent) external onlyOwner {
@@ -101,10 +107,14 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
         top1TeamPercent = _top1TeamPercent;
         top2TeamPercent = _top2TeamPercent;
         top3TeamPercent = _top3TeamPercent;
+
+        emit SetTopTeamPercents(_top1TeamPercent, _top2TeamPercent, _top3TeamPercent);
     }
 
     function setRoundTime(uint _roundTime) external onlyOwner {
         roundTime = _roundTime;
+
+        emit SetRoundTime(_roundTime);
     }
 
     function roundLength() public view returns (uint) {
@@ -113,7 +123,11 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
 
     // add the first round
     function start() external onlyOwner {
-        if (roundInfo.length == 0) addRound();
+        if (roundInfo.length == 0) {
+            addRound();
+
+            emit Start(msg.sender);
+        }
     }
 
     function addRound() internal {
@@ -152,8 +166,9 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
     function updateTeam(uint _rid, uint _tid, uint _totalReward) internal {
         TeamInfo storage team = teamInfo[_rid][_tid];
         team.totalReward = _totalReward;
-        if (team.totalVolume > 0) {
-            team.wannaPerShare = team.totalReward.div(team.totalVolume);
+        uint teamTotalVolume = team.totalVolume;
+        if (teamTotalVolume > 0) {
+            team.wannaPerShare = _totalReward.div(teamTotalVolume);
         }
     }
 
@@ -202,19 +217,22 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
     }
 
     function pendingWanna(address _user) public view returns (uint) {
-        uint result = 0;
+        uint result;
 
         for (uint i = lastClaimedRound[_user]; i < roundInfo.length; i++) {
             RoundInfo storage round = roundInfo[i];
             if (round.isClose) {
                 UserInfo storage user = userInfo[i][_user];
-                if (user.volume > 0) {
+                uint userVolume = user.volume;
+                if (userVolume > 0) {
                     uint tid = user.tid;
                     TeamInfo storage team = teamInfo[i][tid];
-                    result = result.add(team.totalReward.mul(user.volume).div(team.totalVolume));
-                    if (result >= user.claimedReward) {
-                        result = result.sub(user.claimedReward);
+                    result = result.add(team.totalReward.mul(userVolume).div(team.totalVolume));
+                    uint userClaimedReward = user.claimedReward;
+                    if (result >= userClaimedReward) {
+                        result = result.sub(userClaimedReward);
                     }
+                    else result = 0;
                 }
             }
         }
@@ -234,9 +252,11 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
             }
             UserInfo storage user = userInfo[rid][_user];
             uint tid = user.tid;
+            uint userVolume = user.volume;
             TeamInfo storage team = teamInfo[rid][tid];
-            if (team.totalVolume >= user.volume) {
-                team.totalVolume = team.totalVolume.sub(user.volume);
+            uint teamTotalVolume = team.totalVolume;
+            if (teamTotalVolume >= userVolume) {
+                team.totalVolume = teamTotalVolume.sub(userVolume);
             }
 
             user.tid = _tid;
@@ -250,17 +270,19 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
             RoundInfo storage round = roundInfo[i];
             if (round.isClose) {
                 UserInfo storage user = userInfo[i][msg.sender];
-                if (user.volume > 0) {
+                uint userVolume = user.volume;
+                if (userVolume > 0) {
                     uint tid = user.tid;
                     TeamInfo storage team = teamInfo[i][tid];
-                    uint reward = team.totalReward.mul(user.volume).div(team.totalVolume);
-                    if (reward >= user.claimedReward) {
-                        reward = reward.sub(user.claimedReward);
+                    uint reward = team.totalReward.mul(userVolume).div(team.totalVolume);
+                    uint userClaimedReward = user.claimedReward;
+                    if (reward >= userClaimedReward) {
+                        reward = reward.sub(userClaimedReward);
                         uint balance = wanna.balanceOf(address(msg.sender));
                         if (reward > balance) {
                             reward = balance;
                         }
-                        user.claimedReward = user.claimedReward.add(reward);
+                        user.claimedReward = userClaimedReward.add(reward);
                         wanna.safeTransfer(address(msg.sender), reward);
 
                         emit ClaimReward(i, msg.sender, reward);

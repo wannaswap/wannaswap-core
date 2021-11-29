@@ -2,6 +2,12 @@
 pragma solidity =0.6.12;
 
 interface IWannaSwapTreasury {
+    event SetProfile(address indexed profileAddress);
+    event SetRouter(address indexed routerAddress);
+    event SetRewardPerRound(uint rewardPerRound);
+    event SetTopTeamPercents(uint top1TeamPercent, uint top2TeamPercent, uint top3TeamPercent);
+    event SetRoundTime(uint roundTime);
+    event Start(address indexed user);
     event AddVolume(address indexed account, uint value);
     event ClaimReward(uint indexed bid, address indexed user, uint value);
 

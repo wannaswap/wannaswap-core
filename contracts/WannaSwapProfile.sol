@@ -34,9 +34,9 @@ contract WannaSwapProfile is Ownable, IWannaSwapProfile {
         uint userCount;
     }
 
-    WannaSwapToken public wanna;
-    address public treasuryAddress;
-    bool public isStartRefCompetition = false;
+    WannaSwapToken public immutable wanna;
+    address public immutable treasuryAddress;
+    bool public isStartRefCompetition;
 
     TeamInfo[] public teamInfo;
     mapping(address => UserInfo) public userInfo;
@@ -69,14 +69,20 @@ contract WannaSwapProfile is Ownable, IWannaSwapProfile {
 
     function setIsStartRefCompetition(bool _isStartRefCompetition) external onlyOwner {
         isStartRefCompetition = _isStartRefCompetition;
+
+        emit SetIsStartRefCompetition(_isStartRefCompetition);
     }
 
-    function setEmissionAdder(address _user, bool _isEmissionAdder) public onlyOwner {
+    function setEmissionAdder(address _user, bool _isEmissionAdder) external onlyOwner {
         emissionAdder[_user] = _isEmissionAdder;
+
+        emit SetEmissionAdder(_user, _isEmissionAdder);
     }
 
-    function setVolumeUser(address _user, bool _isVolumeUser) public onlyOwner {
+    function setVolumeUser(address _user, bool _isVolumeUser) external onlyOwner {
         volumeUser[_user] = _isVolumeUser;
+
+        emit SetVolumeUser(_user, _isVolumeUser);
     }
 
     function teamid(address _user) external override view returns (uint) {
@@ -91,14 +97,19 @@ contract WannaSwapProfile is Ownable, IWannaSwapProfile {
         return teamInfo.length > 0 ? teamInfo.length.sub(1) : 0; // team0 is exception
     }
 
-    function setReferrer(address _user) external override {
-        require(_user != address(0), "INVALID USER");
-        require(_user != msg.sender, "INVALID USER");
-        if (userInfo[msg.sender].referrer == address(0)) {
-            userInfo[msg.sender].referrer = _user;
-            userInfo[msg.sender].refTime = block.timestamp;
-            ref[_user].push(msg.sender);
-            userInfo[_user].totalRef = userInfo[_user].totalRef.add(1);
+    function setReferrer(address _user, address _referrer) external override onlyEmissionAdder {
+        if (_user != address(0)
+            && _referrer != address(0)
+            && _user != _referrer) {
+            address curReferrer = userInfo[_user].referrer;
+            if (curReferrer == address(0)) {
+                userInfo[_user].referrer = _referrer;
+                userInfo[_user].refTime = block.timestamp;
+                ref[_referrer].push(_user);
+                userInfo[_referrer].totalRef = userInfo[_referrer].totalRef.add(1);
+            }
+
+            emit SetReferrer(_user, _referrer);
         }
     }
 
@@ -120,16 +131,18 @@ contract WannaSwapProfile is Ownable, IWannaSwapProfile {
             address userReferrer = userInfo[_user].referrer;
             userInfo[userReferrer].totalRefVolume = userInfo[userReferrer].totalRefVolume.add(_volume);
         }
+
+        emit SetLastSwap(_user, _volume);
     }
 
     function changeTeam(uint _tid) external override {
         require(_tid > 0, "TEAM_ID MUST BE GREATER THAN 0");
         require(_tid < teamInfo.length, "BAD TEAM");
-        uint currentTid = userInfo[msg.sender].tid;
-        if (currentTid != _tid) {
-            if (currentTid != 0) { // not the first time
+        uint curTid = userInfo[msg.sender].tid;
+        if (curTid != _tid) {
+            if (curTid != 0) { // not the first time
                 // re-calculate userCount
-                teamInfo[currentTid].userCount = teamInfo[currentTid].userCount.sub(1);
+                teamInfo[curTid].userCount = teamInfo[curTid].userCount.sub(1);
             }
 
             IWannaSwapTreasury treasury = IWannaSwapTreasury(treasuryAddress);
@@ -142,17 +155,19 @@ contract WannaSwapProfile is Ownable, IWannaSwapProfile {
     }
 
     function addEmission(address _user, uint _amount) external override onlyEmissionAdder {
-        if (userInfo[_user].referrer != address(0)) {
+        address curReferrer = userInfo[_user].referrer;
+        if (curReferrer != address(0)) {
             userInfo[_user].emission = userInfo[_user].emission.add(_amount);
-            userInfo[userInfo[_user].referrer].refEmission = userInfo[userInfo[_user].referrer].refEmission.add(_amount);
+            userInfo[curReferrer].refEmission = userInfo[curReferrer].refEmission.add(_amount);
 
             emit AddEmission(_user, _amount);
         }
     }
 
     function useVolume(address _user, uint _vol) external override onlyVolumeUser {
-        require(userInfo[_user].totalVolume >= userInfo[_user].usedVolume.add(_vol), "EXCEED TOTAL VOLUME");
-        userInfo[_user].usedVolume = userInfo[_user].usedVolume.add(_vol);
+        uint usedVolume = userInfo[_user].usedVolume;
+        require(userInfo[_user].totalVolume >= usedVolume.add(_vol), "EXCEED TOTAL VOLUME");
+        userInfo[_user].usedVolume = usedVolume.add(_vol);
         
         emit UseVolume(_user, _vol);
     }
