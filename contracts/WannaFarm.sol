@@ -64,6 +64,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         uint _wannaPerBlock,
         uint _refPercent
     ) public {
+        require(_totalWanna <= _wanna.maxSupply(), "BAD TOTALAMOUNT");
         wanna = _wanna;
         profile = _profile;
         totalWanna = _totalWanna;

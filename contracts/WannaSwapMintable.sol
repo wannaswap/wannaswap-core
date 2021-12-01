@@ -7,17 +7,13 @@ import "@openzeppelin/contracts/GSN/Context.sol";
 
 contract WannaSwapMintable is Context, Ownable {
     mapping(address => bool) public _minters;
-    uint public minterLength;
+    uint public minterLength; // max = 2: WannaFarm, WannaSwapTreasury for Team Battle
 
     event AddMinter(address indexed user);
     event RemoveMinter(address indexed user);
 
     constructor () internal {
         address msgSender = _msgSender();
-        _minters[msgSender] = true;
-        minterLength = 1;
-
-        emit AddMinter(msgSender);
     }
 
     modifier onlyMinter() {
@@ -26,6 +22,7 @@ contract WannaSwapMintable is Context, Ownable {
     }
 
     function addMinter(address _user) external virtual onlyOwner {
+        require(minterLength < 2, "addMinter: EXCEED MAX AMOUNT OF MINTERS");
         require(!_minters[_user], "addMinter: MINTER HAS EXISTED");
         _minters[_user] = true;
         minterLength++;
