@@ -207,17 +207,17 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     }
 
     function calculate(uint _reward) public view returns (uint farmWanna) {
-        uint curTotalWanna = totalWanna;
-        uint curMintedWanna = mintedWanna;
-        uint wannaMaxSupply = wanna.maxSupply();
-        if (curTotalWanna > wannaMaxSupply) {
-            curTotalWanna = wannaMaxSupply;
-        }
-        if (curTotalWanna < curMintedWanna.add(_reward)) {
-            _reward = curTotalWanna.sub(curMintedWanna);
-        }
+        uint maxSupply = wanna.maxSupply();
+        uint totalSupply = wanna.totalSupply();
+        uint maxCanMint = maxSupply.sub(totalSupply);
         
-        farmWanna = _reward;
+        uint currTotalWanna = totalWanna;
+        uint currMintedWanna = mintedWanna;
+        uint maxCanMintByChef = currTotalWanna.sub(currMintedWanna);
+
+        maxCanMintByChef = maxCanMint > maxCanMintByChef ? maxCanMintByChef : maxCanMint;
+
+        farmWanna = maxCanMintByChef > _reward ? _reward : maxCanMintByChef;
     }
 
     function updatePool(uint _pid) public {

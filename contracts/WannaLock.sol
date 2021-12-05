@@ -5,10 +5,8 @@ pragma solidity =0.6.12;
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import '../interfaces/IWETH.sol';
 
-contract WannaLock is Ownable{
+contract WannaLock {
     using SafeMath for uint;
     using SafeERC20 for IERC20;
     
@@ -28,37 +26,20 @@ contract WannaLock is Ownable{
     mapping (uint => Items) public lockedToken;
     mapping (address => mapping(address => uint)) public walletTokenBalance;
     
-    uint public lockFee = 0.001 ether;
-    address public feeTo; // WannaConvertFee
-    address public WETH;
-    
     event Withdraw(address withdrawer, uint amount);
     event Lock(address token, uint amount, uint id);
-    
-    constructor(address _feeTo, address _WETH) public {
-        feeTo = _feeTo;
-        WETH = _WETH;
-    }
-
-    receive() external payable {
-        assert(msg.sender == WETH); // only accept ETH via fallback from the WETH contract
-    }
     
     function lockTokens(IERC20 _token, address _withdrawer, uint _amount, uint _unlockTimestamp) payable external returns (uint _id) {
         require(_amount > 0, 'Token amount too low!');
         require(_unlockTimestamp < 10000000000, 'Unlock timestamp is not in seconds!');
         require(_unlockTimestamp > block.timestamp, 'Unlock timestamp is not in the future!');
         require(_token.allowance(msg.sender, address(this)) >= _amount, 'Approve tokens first!');
-        require(msg.value >= lockFee, 'Need to pay lock fee!');
 
         uint beforeDeposit = _token.balanceOf(address(this));
         _token.safeTransferFrom(msg.sender, address(this), _amount);
         uint afterDeposit = _token.balanceOf(address(this));
         
         _amount = afterDeposit.sub(beforeDeposit); 
-
-        IWETH(WETH).deposit{value: msg.value}();
-        assert(IWETH(WETH).transfer(feeTo, msg.value));
                 
         walletTokenBalance[address(_token)][msg.sender] = walletTokenBalance[address(_token)][msg.sender].add(_amount);
         
@@ -90,14 +71,6 @@ contract WannaLock is Ownable{
         
         emit Withdraw(msg.sender, lockedToken[_id].amount);
         lockedToken[_id].token.safeTransfer(msg.sender, lockedToken[_id].amount);
-    }
-    
-    function setFeeTo(address _feeTo) external onlyOwner {
-        feeTo = _feeTo;
-    }
-    
-    function setLockFee(uint _lockFee) external onlyOwner {
-        lockFee = _lockFee;
     }
     
     function getDepositsByTokenAddress(address _token) view external returns (uint[] memory) {

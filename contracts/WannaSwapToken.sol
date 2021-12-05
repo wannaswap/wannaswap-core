@@ -6,7 +6,7 @@ import "./WannaSwapMintable.sol";
 
 contract WannaSwapToken is ERC20("WannaSwap", "WANNA"), WannaSwapMintable {
     uint private _maxSupply = 100000000e18;
-    uint private _initialSupply = 42500000e18;
+    uint private _initialSupply = 36500000e18;
 
     /**
      * @dev Returns the max supply

@@ -16,11 +16,13 @@ contract WannaConvertFee is BoringOwnable {
     IWannaSwapFactory public immutable factory;
     // 0x7928D4FeA7b2c90C732c10aFF59cf403f0C38246
     address public immutable wannax;
-    // 
+    // 0x5205c30bf2E37494F8cF77D2c19C6BA4d2778B9B
     address private immutable wanna;
-    // 
+    // 0x7faA64Faf54750a2E3eE621166635fEAF406Ab22
     address private immutable weth;
     // 0xC9BdeEd33CD01541e1eeD10f90519d2C06Fe3feB
+    address private immutable wnear;
+    // 0xC42C30aC6Cc15faC9bD938618BcaA1a1FaE8501d
 
     mapping(address => address) internal _bridges;
 
@@ -44,12 +46,14 @@ contract WannaConvertFee is BoringOwnable {
         address _factory,
         address _wannax,
         address _wanna,
-        address _weth
+        address _weth,
+        address _wnear
     ) public {
         factory = IWannaSwapFactory(_factory);
         wannax = _wannax;
         wanna = _wanna;
         weth = _weth;
+        wnear = _wnear;
     }
 
     receive() external payable {
@@ -65,7 +69,7 @@ contract WannaConvertFee is BoringOwnable {
 
     function setBridge(address token, address bridge) external onlyOwner {
         require(
-            token != wanna && token != weth && token != bridge,
+            token != wanna && token != weth && token != wnear && token != bridge,
             "WannaConvertFee: Invalid bridge"
         );
 
@@ -114,23 +118,25 @@ contract WannaConvertFee is BoringOwnable {
 
     function _convert(address token0, address token1) internal {
         IWannaSwapPair pair = IWannaSwapPair(factory.getPair(token0, token1));
-        require(address(pair) != address(0), "WannaConvertFee: Invalid pair");
-        IERC20(address(pair)).safeTransfer(
-            address(pair),
-            pair.balanceOf(address(this))
-        );
-        (uint256 amount0, uint256 amount1) = pair.burn(address(this));
-        if (token0 != pair.token0()) {
-            (amount0, amount1) = (amount1, amount0);
+        if (address(pair) != address(0) && pair.balanceOf(address(this)) > 0) {
+            IERC20(address(pair)).safeTransfer(
+                address(pair),
+                pair.balanceOf(address(this))
+            );
+
+            (uint256 amount0, uint256 amount1) = pair.burn(address(this));
+            if (token0 != pair.token0()) {
+                (amount0, amount1) = (amount1, amount0);
+            }
+            emit LogConvert(
+                msg.sender,
+                token0,
+                token1,
+                amount0,
+                amount1,
+                _convertStep(token0, token1, amount0, amount1)
+            );
         }
-        emit LogConvert(
-            msg.sender,
-            token0,
-            token1,
-            amount0,
-            amount1,
-            _convertStep(token0, token1, amount0, amount1)
-        );
     }
 
     function _convertStep(address token0, address token1, uint256 amount0, uint256 amount1) internal returns(uint256 wannaOut) {
@@ -141,6 +147,8 @@ contract WannaConvertFee is BoringOwnable {
                 wannaOut = amount;
             } else if (token0 == weth) {
                 wannaOut = _toWANNA(weth, amount);
+            } else if (token0 == wnear) {
+                wannaOut = _toWANNA(wnear, amount);
             } else {
                 address bridge = bridgeFor(token0);
                 amount = _swap(token0, bridge, amount, address(this));
@@ -156,10 +164,14 @@ contract WannaConvertFee is BoringOwnable {
             wannaOut = _toWANNA(weth, _swap(token1, weth, amount1, address(this)).add(amount0));
         } else if (token1 == weth) { // eg. USDC - ETH
             wannaOut = _toWANNA(weth, _swap(token0, weth, amount0, address(this)).add(amount1));
-        } else { // eg. wNEAR - USDC
+        } else if (token0 == wnear) { // eg. wNEAR - USDC
+            wannaOut = _toWANNA(wnear, _swap(token1, wnear, amount1, address(this)).add(amount0));
+        } else if (token1 == wnear) { // eg. USDC - wNEAR
+            wannaOut = _toWANNA(wnear, _swap(token0, wnear, amount0, address(this)).add(amount1));
+        } else { // eg. AURORA - USDC
             address bridge0 = bridgeFor(token0);
             address bridge1 = bridgeFor(token1);
-            if (bridge0 == token1) { // eg. wNEAR - USDC - and bridgeFor(wNEAR) = USDC
+            if (bridge0 == token1) { // eg. AURORA - USDC - and bridgeFor(AURORA) = USDC
                 wannaOut = _convertStep(bridge0, token1,
                     _swap(token0, bridge0, amount0, address(this)),
                     amount1

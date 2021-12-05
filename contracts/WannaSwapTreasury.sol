@@ -131,7 +131,19 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
     }
 
     function addRound() internal {
-        uint totalReward = rewardPerRound.add(mintedReward) <= maxReward ? rewardPerRound : maxReward.sub(mintedReward);
+        uint maxSupply = wanna.maxSupply();
+        uint totalSupply = wanna.totalSupply();
+        uint maxCanMint = maxSupply.sub(totalSupply);
+        
+        uint currMaxWanna = maxReward;
+        uint currMintedWanna = mintedReward;
+        uint maxCanMintByTreasury = currMaxWanna.sub(currMintedWanna);
+
+        maxCanMintByTreasury = maxCanMint > maxCanMintByTreasury ? maxCanMintByTreasury : maxCanMint;
+        
+        uint totalReward = maxCanMintByTreasury > rewardPerRound ? rewardPerRound : maxCanMintByTreasury;
+        wanna.mint(address(this), totalReward);
+        mintedReward = mintedReward.add(totalReward);
         roundInfo.push(RoundInfo({
             startTime: block.timestamp,
             closeTime: block.timestamp.add(roundTime),
@@ -182,8 +194,6 @@ contract WannaSwapTreasury is Ownable, ReentrancyGuard, IWannaSwapTreasury {
         updateTeam(_rid, top1, top1Reward);
         updateTeam(_rid, top2, top2Reward);
         updateTeam(_rid, top3, top3Reward);
-        wanna.mint(address(this), totalReward);
-        mintedReward = mintedReward.add(totalReward);
         roundInfo[_rid].isClose = true;
     }
 
