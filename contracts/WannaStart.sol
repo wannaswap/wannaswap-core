@@ -7,7 +7,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/IWannaSwapPair.sol";
 
 contract WannaStart is Ownable, ReentrancyGuard {
     string public name = "WannaStart";
@@ -24,7 +23,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
     }
 
     struct PoolInfo {
-        address lpToken; // should be WETH, WNEAR, AURORA or WANNA
+        address lpToken; // should be wNEAR, AURORA or WANNA
         address token; // offering token
         address mustHoldToken; // should be WANNA
         uint totalAmount;
@@ -45,6 +44,10 @@ contract WannaStart is Ownable, ReentrancyGuard {
     PoolInfo[] public poolInfo;
     mapping (uint => mapping (address => UserInfo)) public userInfo;
 
+    event SetFee(uint fee);
+    event SetFeeTo(address feeTo);
+    event AddPool(address lpToken, address token, address mustHoldToken, uint totalAmount, uint mustHoldAmount, uint totalLp, uint startTime, uint commitTime, uint endTime, uint claimTime);
+    event SetPool(uint indexed pid, address lpToken, address token, uint totalAmount, uint totalLp, uint startTime, uint commitTime, uint endTime, uint claimTime);
     event Deposit(address indexed user, uint indexed pid, uint amount);
     event Withdraw(address indexed user, uint indexed pid, uint amount);
     event Commit(address indexed user, uint indexed pid, uint amount);
@@ -60,20 +63,24 @@ contract WannaStart is Ownable, ReentrancyGuard {
         feeTo = _feeTo;
     }
 
-    function setFee(uint _fee) public onlyOwner {
+    function setFee(uint _fee) external onlyOwner {
         require(_fee < 100e18, "setFee: BAD FEE");
         fee = _fee;
+
+        emit SetFee(_fee);
     }
 
-    function setFeeTo(address _feeTo) public onlyOwner {
+    function setFeeTo(address _feeTo) external onlyOwner {
         feeTo = _feeTo;
+
+        emit SetFeeTo(_feeTo);
     }
 
     function poolLength() external view returns (uint) {
         return poolInfo.length;
     }
 
-    function addPool(address _lpToken, address _token, address _mustHoldToken, uint _totalAmount, uint _mustHoldAmount, uint _totalLp, uint _startTime, uint _commitTime, uint _endTime, uint _claimTime) public onlyOwner {
+    function addPool(address _lpToken, address _token, address _mustHoldToken, uint _totalAmount, uint _mustHoldAmount, uint _totalLp, uint _startTime, uint _commitTime, uint _endTime, uint _claimTime) external onlyOwner {
         require(_startTime > block.timestamp, "addPool: BAD STARTTIME");
         require(_commitTime > _startTime, "addPool: BAD COMMITTIME");
         require(_endTime > _commitTime, "addPool: BAD ENDTIME");
@@ -93,9 +100,11 @@ contract WannaStart is Ownable, ReentrancyGuard {
             endTime: _endTime,
             claimTime: _claimTime
         }));
+
+        emit AddPool(_lpToken, _token, _mustHoldToken, _totalAmount, _mustHoldAmount, _totalLp, _startTime, _commitTime, _endTime, _claimTime);
     }
 
-    function setPool(uint _pid, address _lpToken, address _token, uint _totalAmount, uint _totalLp, uint _startTime, uint _commitTime, uint _endTime, uint _claimTime) public onlyOwner {
+    function setPool(uint _pid, address _lpToken, address _token, uint _totalAmount, uint _totalLp, uint _startTime, uint _commitTime, uint _endTime, uint _claimTime) external onlyOwner {
         require(_pid < poolInfo.length, "setPool: BAD POOL");
         require(_startTime > block.timestamp, "setPool: BAD STARTTIME");
         require(_commitTime > _startTime, "setPool: BAD COMMITTIME");
@@ -110,6 +119,8 @@ contract WannaStart is Ownable, ReentrancyGuard {
         poolInfo[_pid].commitTime = _commitTime;
         poolInfo[_pid].endTime = _endTime;
         poolInfo[_pid].claimTime = _claimTime;
+
+        emit SetPool(_pid, _lpToken, _token, _totalAmount, _totalLp, _startTime, _commitTime, _endTime, _claimTime);
     }
 
     function maxCommitment(uint _pid, address _user) public view returns (uint) {
@@ -117,9 +128,12 @@ contract WannaStart is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint savedMaxCommitment = user.savedMaxCommitment;
-        if (block.timestamp > user.lastInteraction && user.lastInteraction > pool.startTime && pool.commitTime >= user.lastInteraction) {
-            uint savedDuration = user.lastInteraction.sub(pool.startTime);
-            uint pendingDuration = block.timestamp < pool.commitTime ? block.timestamp.sub(user.lastInteraction) : pool.commitTime.sub(user.lastInteraction);
+        uint lastInteraction = user.lastInteraction;
+        uint startTime = pool.startTime;
+        uint commitTime = pool.commitTime;
+        if (block.timestamp > lastInteraction && lastInteraction > startTime && commitTime >= lastInteraction) {
+            uint savedDuration = lastInteraction.sub(startTime);
+            uint pendingDuration = block.timestamp < commitTime ? block.timestamp.sub(lastInteraction) : commitTime.sub(lastInteraction);
             savedMaxCommitment = savedMaxCommitment.mul(savedDuration)
                                 .add(user.lpAmount.mul(pendingDuration))
                                 .div(savedDuration.add(pendingDuration));
@@ -127,7 +141,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
         return savedMaxCommitment;
     }
 
-    function deposit(uint _pid, uint _amount) public nonReentrant {
+    function deposit(uint _pid, uint _amount) external nonReentrant {
         require(_pid < poolInfo.length, "deposit: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.startTime, "deposit: NOT NOW");
@@ -144,7 +158,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
         emit Deposit(msg.sender, _pid, _amount);
     }
 
-    function withdraw(uint _pid, uint _amount) public nonReentrant {
+    function withdraw(uint _pid, uint _amount) external nonReentrant {
         require(_pid < poolInfo.length, "withdraw: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.startTime, "withdraw: NOT NOW");
@@ -164,38 +178,40 @@ contract WannaStart is Ownable, ReentrancyGuard {
         emit Withdraw(msg.sender, _pid, _amount);
     }
 
-    function commit(uint _pid, uint _amount) public nonReentrant {
+    function commit(uint _pid, uint _amount) external nonReentrant {
         require(_pid < poolInfo.length, "commit: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.commitTime, "commit: NOT NOW");
         require(block.timestamp < pool.endTime, "commit: BAD TIME");
         UserInfo storage user = userInfo[_pid][msg.sender];
         user.savedMaxCommitment = maxCommitment(_pid, msg.sender);
-        require(user.savedMaxCommitment >= user.commitment.add(_amount), "commit: BAD AMOUNT");
+        uint commitment = user.commitment;
+        require(user.savedMaxCommitment >= commitment.add(_amount), "commit: BAD AMOUNT");
 
         user.lastInteraction = block.timestamp;
         if(_amount > 0) {
             IERC20(pool.lpToken).safeTransferFrom(address(msg.sender), address(this), _amount);
-            if (user.commitment == 0) {
+            if (commitment == 0) {
                 pool.totalUser = pool.totalUser.add(1);
             }
-            user.commitment = user.commitment.add(_amount);
+            user.commitment = commitment.add(_amount);
             pool.totalCommitment = pool.totalCommitment.add(_amount);
         }
         emit Commit(msg.sender, _pid, _amount);
     }
 
-    function uncommit(uint _pid, uint _amount) public nonReentrant {
+    function uncommit(uint _pid, uint _amount) external nonReentrant {
         require(_pid < poolInfo.length, "uncommit: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.commitTime, "uncommit: NOT NOW");
         require(block.timestamp < pool.endTime, "uncommit: BAD TIME");
         UserInfo storage user = userInfo[_pid][msg.sender];
-        require(user.commitment >= _amount, "uncommit: BAD AMOUNT");
+        uint commitment = user.commitment;
+        require(commitment >= _amount, "uncommit: BAD AMOUNT");
 
         user.lastInteraction = block.timestamp;
         if(_amount > 0) {
-            user.commitment = user.commitment.sub(_amount);
+            user.commitment = commitment.sub(_amount);
             if (user.commitment == 0) {
                 pool.totalUser = pool.totalUser.sub(1);
             }
@@ -220,14 +236,17 @@ contract WannaStart is Ownable, ReentrancyGuard {
         require(_pid < poolInfo.length, "claimableRefundAmount: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
-        if (block.timestamp < pool.endTime || pool.totalCommitment < pool.totalLp) {
+        uint totalCommitment = pool.totalCommitment;
+        uint totalLp = pool.totalLp;
+        if (block.timestamp < pool.endTime || totalCommitment < totalLp) {
             return 0;
         }
+        uint commitment = user.commitment;
         
-        return user.commitment.sub(user.commitment.mul(pool.totalLp).div(pool.totalCommitment)).sub(user.claimedRefundAmount);
+        return commitment.sub(commitment.mul(totalLp).div(totalCommitment)).sub(user.claimedRefundAmount);
     }
 
-    function claim(uint _pid) public nonReentrant {
+    function claim(uint _pid) external nonReentrant {
         require(_pid < poolInfo.length, "claim: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.claimTime, "claim: NOT NOW");
@@ -236,17 +255,18 @@ contract WannaStart is Ownable, ReentrancyGuard {
         uint pending = claimableAmount(_pid, msg.sender);
         uint pendingRefund = claimableRefundAmount(_pid, msg.sender);
         user.lastInteraction = block.timestamp;
+        IERC20 token = IERC20(pool.token);
         if(pending > 0) {
-            uint balance = IERC20(pool.token).balanceOf(address(this));
+            uint balance = token.balanceOf(address(this));
             if (pending > balance) {
                 pending = balance;
             }
 
             user.claimedAmount = user.claimedAmount.add(pending);
-            IERC20(pool.token).safeTransfer(address(msg.sender), pending);
+            token.safeTransfer(address(msg.sender), pending);
         }
         if(pendingRefund > 0) {
-            uint balanceRefund = IERC20(pool.lpToken).balanceOf(address(this));
+            uint balanceRefund = token.balanceOf(address(this));
             if (pendingRefund > balanceRefund) {
                 pendingRefund = balanceRefund;
             }
@@ -257,19 +277,22 @@ contract WannaStart is Ownable, ReentrancyGuard {
         emit Claim(msg.sender, _pid, pending, pendingRefund);
     }
 
-    function finalizePool(uint _pid, address _fundTo) public onlyOwner {
+    function finalizePool(uint _pid, address _fundTo) external onlyOwner {
         require(_pid < poolInfo.length, "finalizePool: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.claimTime, "finalizePool: NOT NOW");
-        uint totalRaised = pool.totalCommitment > pool.totalLp ? pool.totalLp : pool.totalCommitment;
-        uint balance = IERC20(pool.lpToken).balanceOf(address(this));
+        uint totalCommitment = pool.totalCommitment;
+        uint totalLp = pool.totalLp;
+        IERC20 lpToken = IERC20(pool.lpToken);
+        uint totalRaised = totalCommitment > totalLp ? totalLp : totalCommitment;
+        uint balance = lpToken.balanceOf(address(this));
         if (totalRaised > balance) totalRaised = balance;
         uint totalFee = totalRaised.mul(fee).div(100e18);
         uint amount = totalRaised.sub(totalFee);
         // send fee to converter
-        IERC20(pool.lpToken).safeTransfer(feeTo, totalFee);
+        lpToken.safeTransfer(feeTo, totalFee);
         // send fund to offerer
-        IERC20(pool.lpToken).safeTransfer(_fundTo, amount);
+        lpToken.safeTransfer(_fundTo, amount);
         emit FinalizePool(msg.sender, _pid, _fundTo, totalFee, amount);
     }
 }
