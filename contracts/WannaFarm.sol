@@ -25,7 +25,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     struct PoolInfo {
         IERC20 lpToken;
         uint allocPoint;
-        uint lastRewardTime;
+        uint lastRewardBlock;
         uint accWannaPerShare;
         uint totalLp;
         address rewarder; // bonus other tokens, ex: AURORA
@@ -39,20 +39,20 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
     uint public totalWanna;
     uint public mintedWanna;
-    uint public wannaPerSecond;
+    uint public wannaPerBlock;
 
     PoolInfo[] public poolInfo;
     mapping (address => uint) poolIndex;
     mapping (uint => mapping (address => UserInfo)) public userInfo;
     uint public totalAllocPoint;
 
-    event SetEmissionRate(uint wannaPerSecond);
+    event SetEmissionRate(uint wannaPerBlock);
     event SetTotalWanna(uint totalWanna);
     event SetPercent(uint refPercent);
     event SetIsEnableRef(bool isEnableRef);
     event AddPool(uint allocPoint, address lpToken, address rewarder, bool withUpdate);
     event SetPool(uint indexed pid, uint allocPoint, address rewarder, bool withUpdate);
-    event SetBonusEmissionRate(uint indexed pid, uint rewardPerSecond);
+    event SetBonusEmissionRate(uint indexed pid, uint rewardPerBlock);
     event Deposit(address indexed user, uint indexed pid, uint amount);
     event Withdraw(address indexed user, uint indexed pid, uint amount);
     event EmergencyWithdraw(address indexed user, uint indexed pid, uint amount);
@@ -61,22 +61,22 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         WannaSwapToken _wanna,
         address _profile,
         uint _totalWanna,
-        uint _wannaPerSecond,
+        uint _wannaPerBlock,
         uint _refPercent
     ) public {
         require(_totalWanna <= _wanna.maxSupply(), "BAD TOTALAMOUNT");
         wanna = _wanna;
         profile = _profile;
         totalWanna = _totalWanna;
-        wannaPerSecond = _wannaPerSecond;
+        wannaPerBlock = _wannaPerBlock;
         refPercent = _refPercent;
     }
 
-    function setEmissionRate(uint _wannaPerSecond) external onlyOwner {
+    function setEmissionRate(uint _wannaPerBlock) external onlyOwner {
         updateAllPools();
-        wannaPerSecond = _wannaPerSecond;
+        wannaPerBlock = _wannaPerBlock;
         
-        emit SetEmissionRate(_wannaPerSecond);
+        emit SetEmissionRate(_wannaPerBlock);
     }
 
     function setTotalWanna(
@@ -116,12 +116,12 @@ contract WannaFarm is Ownable, ReentrancyGuard {
             updateAllPools();
         }
 
-        uint lastRewardTime = block.timestamp;
+        uint lastRewardBlock = block.timestamp;
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
         poolInfo.push(PoolInfo({
             lpToken: _lpToken,
             allocPoint: _allocPoint,
-            lastRewardTime: lastRewardTime,
+            lastRewardBlock: lastRewardBlock,
             accWannaPerShare: 0,
             totalLp: 0,
             rewarder: _rewarder
@@ -143,22 +143,22 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         emit SetPool(_pid, _allocPoint, _rewarder, _withUpdate);
     }
 
-    function setBonusEmissionRate(uint _pid, uint _rewardPerSecond) external onlyOwner {
+    function setBonusEmissionRate(uint _pid, uint _rewardPerBlock) external onlyOwner {
         require(_pid < poolInfo.length, "setBonusEmissionRate: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
 
         updatePool(_pid);
 
         if (pool.rewarder != address(0)) {
-            uint timeCount = getSecondCount(pool.lastRewardTime, block.timestamp);
+            uint blockCount = getBlockCount(pool.lastRewardBlock, block.timestamp);
             uint lpSupply = pool.totalLp;
-            IRewarder(pool.rewarder).setRewardPerBlock(_rewardPerSecond, timeCount, lpSupply);
+            IRewarder(pool.rewarder).setRewardPerBlock(_rewardPerBlock, blockCount, lpSupply);
         }
 
-        emit SetBonusEmissionRate(_pid, _rewardPerSecond);
+        emit SetBonusEmissionRate(_pid, _rewardPerBlock);
     }
 
-    function getSecondCount(uint _from, uint _to) public view returns (uint) {
+    function getBlockCount(uint _from, uint _to) public view returns (uint) {
         return _to.sub(_from);
     }
 
@@ -168,10 +168,10 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][_user];
         uint accWannaPerShare = pool.accWannaPerShare;
         uint lpSupply = pool.totalLp;
-        uint lastRewardTime = pool.lastRewardTime;
-        if (block.timestamp > lastRewardTime && lpSupply != 0) {
-            uint timeCount = getSecondCount(lastRewardTime, block.timestamp);
-            uint wannaReward = timeCount.mul(wannaPerSecond).mul(pool.allocPoint).div(totalAllocPoint);
+        uint lastRewardBlock = pool.lastRewardBlock;
+        if (block.timestamp > lastRewardBlock && lpSupply != 0) {
+            uint blockCount = getBlockCount(lastRewardBlock, block.timestamp);
+            uint wannaReward = blockCount.mul(wannaPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
 
             uint farmWanna = calculate(wannaReward);
 
@@ -190,11 +190,11 @@ contract WannaFarm is Ownable, ReentrancyGuard {
 
         UserInfo storage user = userInfo[_pid][_user];
         uint lpSupply = pool.totalLp;
-        uint lastRewardTime = pool.lastRewardTime;
-        if (block.timestamp > lastRewardTime && lpSupply != 0) {
-            uint timeCount = getSecondCount(lastRewardTime, block.timestamp);
+        uint lastRewardBlock = pool.lastRewardBlock;
+        if (block.timestamp > lastRewardBlock && lpSupply != 0) {
+            uint blockCount = getBlockCount(lastRewardBlock, block.timestamp);
             
-            return IRewarder(rewarder).pendingReward(_user, user.amount, timeCount, lpSupply);
+            return IRewarder(rewarder).pendingReward(_user, user.amount, blockCount, lpSupply);
         }
         return 0;
     }
@@ -223,19 +223,19 @@ contract WannaFarm is Ownable, ReentrancyGuard {
     function updatePool(uint _pid) public {
         require(_pid < poolInfo.length, "updatePool: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
-        uint lastRewardTime = pool.lastRewardTime;
-        if (block.timestamp <= lastRewardTime) {
+        uint lastRewardBlock = pool.lastRewardBlock;
+        if (block.timestamp <= lastRewardBlock) {
             return;
         }
         uint allocPoint = pool.allocPoint;
         uint lpSupply = pool.totalLp;
         if (lpSupply == 0 || allocPoint == 0) {
-            pool.lastRewardTime = block.timestamp;
+            pool.lastRewardBlock = block.timestamp;
             return;
         }
 
-        uint timeCount = getSecondCount(lastRewardTime, block.timestamp);
-        uint wannaReward = timeCount.mul(wannaPerSecond).mul(allocPoint).div(totalAllocPoint);
+        uint blockCount = getBlockCount(lastRewardBlock, block.timestamp);
+        uint wannaReward = blockCount.mul(wannaPerBlock).mul(allocPoint).div(totalAllocPoint);
 
         uint farmWanna = calculate(wannaReward);
 
@@ -243,7 +243,7 @@ contract WannaFarm is Ownable, ReentrancyGuard {
         mintedWanna = mintedWanna.add(farmWanna);
 
         pool.accWannaPerShare = pool.accWannaPerShare.add(farmWanna.mul(1e18).div(lpSupply));
-        pool.lastRewardTime = block.timestamp;
+        pool.lastRewardBlock = block.timestamp;
     }
 
     function harvest(uint _pid, address _user) internal {
@@ -283,9 +283,9 @@ contract WannaFarm is Ownable, ReentrancyGuard {
             
             address rewarder = pool.rewarder;
             if (rewarder != address(0)) {
-                uint timeCount = getSecondCount(pool.lastRewardTime, block.timestamp);
+                uint blockCount = getBlockCount(pool.lastRewardBlock, block.timestamp);
                 uint lpSupply = pool.totalLp;
-                IRewarder(rewarder).onReward(_user, amount, timeCount, lpSupply);
+                IRewarder(rewarder).onReward(_user, amount, blockCount, lpSupply);
             }
 
             user.rewardDebt = amount.mul(pool.accWannaPerShare).div(1e18);
