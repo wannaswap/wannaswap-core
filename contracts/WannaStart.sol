@@ -23,7 +23,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
     }
 
     struct PoolInfo {
-        address lpToken; // should be wNEAR, AURORA or WANNA
+        address lpToken; // should be wLP Token, wNEAR, AURORA or WANNA
         address token; // offering token
         address mustHoldToken; // should be WANNA
         uint totalAmount;
@@ -104,7 +104,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
         emit AddPool(_lpToken, _token, _mustHoldToken, _totalAmount, _mustHoldAmount, _totalLp, _startTime, _commitTime, _endTime, _claimTime);
     }
 
-    function setPool(uint _pid, address _lpToken, address _token, uint _totalAmount, uint _totalLp, uint _startTime, uint _commitTime, uint _endTime, uint _claimTime) external onlyOwner {
+    function setPool(uint _pid, address _lpToken, address _token, address _mustHoldToken, uint _totalAmount, uint _mustHoldAmount, uint _totalLp, uint _startTime, uint _commitTime, uint _endTime, uint _claimTime) external onlyOwner {
         require(_pid < poolInfo.length, "setPool: BAD POOL");
         require(_startTime > block.timestamp, "setPool: BAD STARTTIME");
         require(_commitTime > _startTime, "setPool: BAD COMMITTIME");
@@ -146,6 +146,10 @@ contract WannaStart is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.startTime, "deposit: NOT NOW");
         require(block.timestamp < pool.commitTime, "deposit: BAD TIME");
+        address mustHoldToken = pool.mustHoldToken;
+        if (mustHoldToken != address(0)) {
+            require(IERC20(mustHoldToken).balanceOf(msg.sender) >= pool.mustHoldAmount, "deposit: Must hold enough required tokens");
+        }
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         user.savedMaxCommitment = maxCommitment(_pid, msg.sender);
@@ -170,7 +174,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
         if(_amount > 0) {
             user.lpAmount = user.lpAmount.sub(_amount);
             // started committing => save totalStakedLp to view
-            if (block.timestamp >= pool.commitTime) {
+            if (block.timestamp < pool.commitTime) {
                 pool.totalStakedLp = pool.totalStakedLp.sub(_amount);
             }
             IERC20(pool.lpToken).safeTransfer(address(msg.sender), _amount);
@@ -183,6 +187,10 @@ contract WannaStart is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.commitTime, "commit: NOT NOW");
         require(block.timestamp < pool.endTime, "commit: BAD TIME");
+        address mustHoldToken = pool.mustHoldToken;
+        if (mustHoldToken != address(0)) {
+            require(IERC20(mustHoldToken).balanceOf(msg.sender) >= pool.mustHoldAmount, "deposit: Must hold enough required tokens");
+        }
         UserInfo storage user = userInfo[_pid][msg.sender];
         user.savedMaxCommitment = maxCommitment(_pid, msg.sender);
         uint commitment = user.commitment;
@@ -250,6 +258,10 @@ contract WannaStart is Ownable, ReentrancyGuard {
         require(_pid < poolInfo.length, "claim: BAD POOL");
         PoolInfo storage pool = poolInfo[_pid];
         require(block.timestamp >= pool.claimTime, "claim: NOT NOW");
+        address mustHoldToken = pool.mustHoldToken;
+        if (mustHoldToken != address(0)) {
+            require(IERC20(mustHoldToken).balanceOf(msg.sender) >= pool.mustHoldAmount, "deposit: Must hold enough required tokens");
+        }
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         uint pending = claimableAmount(_pid, msg.sender);
