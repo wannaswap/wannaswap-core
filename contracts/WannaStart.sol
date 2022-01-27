@@ -38,14 +38,13 @@ contract WannaStart is Ownable, ReentrancyGuard {
         uint256 claimTime;
     }
 
-    uint256 public fee; // percent
     address public feeTo;
 
     PoolInfo[] public poolInfo;
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
+    mapping(uint256 => uint256) public fee; // percent
     mapping(uint256 => bool) public isFinalized;
 
-    event SetFee(uint256 fee);
     event SetFeeTo(address feeTo);
     event AddPool(
         address lpToken,
@@ -57,7 +56,8 @@ contract WannaStart is Ownable, ReentrancyGuard {
         uint256 startTime,
         uint256 commitTime,
         uint256 endTime,
-        uint256 claimTime
+        uint256 claimTime,
+        uint256 fee
     );
     event SetPool(
         uint256 indexed pid,
@@ -68,7 +68,8 @@ contract WannaStart is Ownable, ReentrancyGuard {
         uint256 startTime,
         uint256 commitTime,
         uint256 endTime,
-        uint256 claimTime
+        uint256 claimTime,
+        uint256 fee
     );
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -88,16 +89,8 @@ contract WannaStart is Ownable, ReentrancyGuard {
         uint256 amount
     );
 
-    constructor(uint256 _fee, address _feeTo) public {
-        fee = _fee;
+    constructor(address _feeTo) public {
         feeTo = _feeTo;
-    }
-
-    function setFee(uint256 _fee) external onlyOwner {
-        require(_fee < 100e18, "setFee: BAD FEE");
-        fee = _fee;
-
-        emit SetFee(_fee);
     }
 
     function setFeeTo(address _feeTo) external onlyOwner {
@@ -121,12 +114,15 @@ contract WannaStart is Ownable, ReentrancyGuard {
         uint256 _startTime,
         uint256 _commitTime,
         uint256 _endTime,
-        uint256 _claimTime
+        uint256 _claimTime,
+        uint256 _fee
     ) external onlyOwner {
         require(_startTime > block.timestamp, "addPool: BAD STARTTIME");
         require(_commitTime > _startTime, "addPool: BAD COMMITTIME");
         require(_endTime > _commitTime, "addPool: BAD ENDTIME");
         require(_claimTime > _endTime, "addPool: BAD CLAIMTIME");
+        require(_fee < 100e18, "addPool: BAD FEE");
+        fee[poolInfo.length] = _fee;
         poolInfo.push(
             PoolInfo({
                 lpToken: _lpToken,
@@ -155,7 +151,8 @@ contract WannaStart is Ownable, ReentrancyGuard {
             _startTime,
             _commitTime,
             _endTime,
-            _claimTime
+            _claimTime,
+            _fee
         );
     }
 
@@ -170,7 +167,8 @@ contract WannaStart is Ownable, ReentrancyGuard {
         uint256 _startTime,
         uint256 _commitTime,
         uint256 _endTime,
-        uint256 _claimTime
+        uint256 _claimTime,
+        uint256 _fee
     ) external onlyOwner {
         require(_pid < poolInfo.length, "setPool: BAD POOL");
         require(
@@ -181,6 +179,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
         require(_commitTime > _startTime, "setPool: BAD COMMITTIME");
         require(_endTime > _commitTime, "setPool: BAD ENDTIME");
         require(_claimTime > _endTime, "setPool: BAD CLAIMTIME");
+        require(_fee < 100e18, "setPool: BAD FEE");
 
         poolInfo[_pid].lpToken = _lpToken;
         poolInfo[_pid].token = _token;
@@ -192,6 +191,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
         poolInfo[_pid].commitTime = _commitTime;
         poolInfo[_pid].endTime = _endTime;
         poolInfo[_pid].claimTime = _claimTime;
+        fee[_pid] = _fee;
 
         emit SetPool(
             _pid,
@@ -202,7 +202,8 @@ contract WannaStart is Ownable, ReentrancyGuard {
             _startTime,
             _commitTime,
             _endTime,
-            _claimTime
+            _claimTime,
+            _fee
         );
     }
 
@@ -438,7 +439,7 @@ contract WannaStart is Ownable, ReentrancyGuard {
             : totalCommitment;
         uint256 balance = lpToken.balanceOf(address(this));
         if (totalRaised > balance) totalRaised = balance;
-        uint256 totalFee = totalRaised.mul(fee).div(100e18);
+        uint256 totalFee = totalRaised.mul(fee[_pid]).div(100e18);
         uint256 amount = totalRaised.sub(totalFee);
         // send fee to converter
         lpToken.safeTransfer(feeTo, totalFee);
