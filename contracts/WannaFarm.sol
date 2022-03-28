@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/IRewarder.sol";
+import "../interfaces/IRewarderOld.sol";
 import "../interfaces/IWannaSwapProfile.sol";
 import "./WannaSwapToken.sol";
 
